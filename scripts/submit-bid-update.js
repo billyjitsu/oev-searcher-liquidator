@@ -1,50 +1,67 @@
-const {
-  Wallet,
-  Contract,
-  JsonRpcProvider,
-  keccak256,
-  solidityPacked,
-  AbiCoder,
-  parseEther,
-  hexlify,
-  randomBytes,
-  MaxUint256,
-} = require("ethers");
+const { Wallet, Contract, JsonRpcProvider, keccak256, solidityPacked, parseEther, MaxUint256 } = require("ethers");
 const api3Contracts = require("@api3/contracts");
+const { fetchOEVSignedData } = require("./fetch-oevsigneddata");
 const deployments = require("./deployments.json");
 const dotenv = require("dotenv");
 
 dotenv.config();
 
-// The Bid Topic is constant value used by the auctioneer to filter bids that pertain to the specific auctioneer instance.
-// That is to say, different versions of the auctioneer will have different bid topics.
-const getBidTopic = () => {
-  return "0x76302d70726f642d61756374696f6e6565720000000000000000000000000000";
+const OEV_AUCTION_LENGTH_SECONDS = 30;
+const OEV_BIDDING_PHASE_LENGTH_SECONDS = 25;
+const OEV_BIDDING_PHASE_BUFFER_SECONDS = 3;
+const OEV_AUCTIONS_MAJOR_VERSION = 1;
+const DAPP_ID = 1; // The dAppId of the communal proxies
+
+const oevNetworkProvider = new JsonRpcProvider(process.env.OEV_NETWORK_RPC_URL);
+const oevNetworkWallet = Wallet.fromPhrase(process.env.MNEMONIC).connect(oevNetworkProvider);
+const targetNetworkProvider = new JsonRpcProvider(process.env.TARGET_NETWORK_RPC_URL);
+const targetNetworkWallet = Wallet.fromPhrase(process.env.MNEMONIC).connect(targetNetworkProvider);
+
+const BID_AMOUNT = process.env.BID_AMOUNT || "0.01"; // Default: 0.01 MNT
+const DAPI_NAME = process.env.DAPI_NAME || "ETH/USD"; // Default: ETH/USD
+
+const determineSignedDataTimestampCutoff = () => {
+  const auctionOffset = Number(
+    BigInt(ethers.solidityPackedKeccak256(["uint256"], [DAPP_ID])) % BigInt(OEV_AUCTION_LENGTH_SECONDS)
+  );
+  const currentTimestamp = Math.floor(Date.now() / 1000);
+  const timeInCurrentAuction = (currentTimestamp - auctionOffset) % OEV_AUCTION_LENGTH_SECONDS;
+  const auctionStartTimestamp = currentTimestamp - timeInCurrentAuction;
+  const biddingPhaseEndTimestamp = auctionStartTimestamp + OEV_BIDDING_PHASE_LENGTH_SECONDS;
+  let signedDataTimestampCutoff = auctionStartTimestamp + OEV_BIDDING_PHASE_LENGTH_SECONDS;
+
+  if (biddingPhaseEndTimestamp - currentTimestamp < OEV_BIDDING_PHASE_BUFFER_SECONDS) {
+    console.log(
+      "Not enough time to place bid in current auction, bidding for the next one",
+      currentTimestamp,
+      biddingPhaseEndTimestamp,
+      auctionOffset
+    );
+    signedDataTimestampCutoff += OEV_AUCTION_LENGTH_SECONDS;
+  }
+
+  return signedDataTimestampCutoff;
 };
 
-// Function to encode the bid details and return to bytes
-const getBidDetails = (proxyAddress, condition, conditionValue, updaterAddress) => {
-  const abiCoder = new AbiCoder();
-  const BID_CONDITIONS = [
-    { onchainIndex: 0n, description: "LTE" },
-    { onchainIndex: 1n, description: "GTE" },
-  ];
-  const conditionIndex = BID_CONDITIONS.findIndex((c) => c.description === condition);
-  return abiCoder.encode(
-    ["address", "uint256", "int224", "address", "bytes32"],
-    [proxyAddress, conditionIndex, conditionValue, updaterAddress, hexlify(randomBytes(32))]
+const getBidTopic = (signedDataTimestampCutoff) => {
+  return ethers.solidityPackedKeccak256(
+    ["uint256", "uint256", "uint32", "uint32"],
+    [OEV_AUCTIONS_MAJOR_VERSION, DAPP_ID, OEV_AUCTION_LENGTH_SECONDS, signedDataTimestampCutoff]
   );
 };
 
-const placeBid = async () => {
-  const PROXY_ADDRESS = process.env.PROXY_ADDRESS ?? "0xae2debfef62b1a0c8af55dae11d197bca1bcde3f"; // Default: MNT/USD on Mantle Mainnet
-  const CHAIN_ID = process.env.CHAIN_ID ?? "5000"; // Default: mantle Mainnet
-  const BID_AMOUNT = process.env.BID_AMOUNT ?? "0.000001"; // Default: 0.000001 MNT
-  const BID_CONDITION = process.env.BID_CONDITION ?? "LTE"; // Default: Less than or equal to
-  const BID_PRICE = process.env.BID_PRICE ?? "5"; // Default: 5
+// Function to encode the bid details and return to bytes
+const getBidDetails = (OevFeedUpdaterAddress) => {
+  const nonce = ethers.hexlify(ethers.randomBytes(32));
+  return ethers.AbiCoder.defaultAbiCoder().encode(["address", "bytes32"], [OevFeedUpdaterAddress, nonce]);
+};
 
-  const oevNetworkProvider = new JsonRpcProvider(process.env.OEV_NETWORK_RPC_URL);
-  const oevNetworkWallet = Wallet.fromPhrase(process.env.MNEMONIC).connect(oevNetworkProvider);
+const placeBid = async () => {
+  // Fetch the OEV signed data to bid on
+  const priceUpdateDetails = await fetchOEVSignedData(DAPI_NAME);
+
+  const targetChainId = (await targetNetworkProvider.getNetwork()).chainId;
+
   const OevAuctionHouseArtifact = await hre.artifacts.readArtifact("OevAuctionHouse");
   const OevAuctionHouse = new Contract(
     api3Contracts.deploymentAddresses.OevAuctionHouse["4913"],
@@ -52,25 +69,31 @@ const placeBid = async () => {
     oevNetworkWallet
   );
 
-  const bidTopic = getBidTopic();
+  const signedDataTimestampCutoff = determineSignedDataTimestampCutoff();
+  const nextBiddingPhaseEndTimestamp = signedDataTimestampCutoff + OEV_AUCTION_LENGTH_SECONDS;
+
+  const bidTopic = getBidTopic(signedDataTimestampCutoff);
 
   const bidDetails = getBidDetails(
-    PROXY_ADDRESS, // Proxy addressof the dAPI
-    BID_CONDITION, // The condition you want to update
-    parseEther(BID_PRICE), // The price you want to update
-    deployments.OevSearcherMulticallV1, // Your deployed MultiCall contract Address
-    hexlify(randomBytes(32)) // Random padding
+    deployments.OevFeedUpdater // Your deployed MultiCall contract Address
   );
 
-  // Placing our bid with the auction house on OEV testnet
+  console.log("Placing bid with the following details:");
+  console.log("Bid Topic:", bidTopic);
+  console.log("Bid Details:", bidDetails);
+  console.log("Current Timestamp:", Math.floor(Date.now() / 1000));
+  console.log("Signed Data Timestamp Cutoff:", signedDataTimestampCutoff);
+  console.log("Next Bidding Phase End Timestamp:", nextBiddingPhaseEndTimestamp);
+
+  // Placing our bid with the auction house on OEV network
   const placedbidTx = await OevAuctionHouse.placeBidWithExpiration(
     bidTopic, // The bid topic of the auctioneer instance
-    parseInt(CHAIN_ID), // Chain ID of the dAPI proxy
+    parseInt(targetChainId), // Chain ID of the dAPI proxy
     parseEther(BID_AMOUNT), // The amount of chain native currency you are bidding to win this auction and perform the oracle update
     bidDetails, // The details about the bid, proxy address, condition, price, your deployed multicall and random
     MaxUint256, // Collateral Basis Points is set to max
     MaxUint256, // Protocol Fee Basis Points is set to max
-    Math.trunc(Date.now() / 1000) + 60 * 60 * 12 // Expiration time is set to 12 hours from now
+    nextBiddingPhaseEndTimestamp // The expiration time of the bid
   );
   console.log("Bid Tx Hash", placedbidTx.hash);
   console.log("Bid placed");
@@ -87,7 +110,7 @@ const placeBid = async () => {
     )
   );
 
-  const awardedTransaction = await new Promise(async (resolve, reject) => {
+  const awardedSignature = await new Promise(async (resolve, reject) => {
     console.log("Waiting for bid to be awarded...");
     const OevAuctionHouseFilter = OevAuctionHouse.filters.AwardedBid(null, bidTopic, bidId, null, null);
     while (true) {
@@ -104,35 +127,33 @@ const placeBid = async () => {
     }
   });
 
-  const updateTx = await performOevUpdate(awardedTransaction);
+  const updateTx = await performOevUpdate(awardedSignature, signedDataTimestampCutoff, priceUpdateDetails);
 
   const reportTx = await reportFulfillment(updateTx, bidTopic, bidDetails, bidId);
 };
 
-const performOevUpdate = async (awardedTransaction) => {
-  const CHAIN_ID = process.env.CHAIN_ID ?? "5000"; // Default: Mantle Mainnet
-  const BID_AMOUNT = process.env.BID_AMOUNT ?? "0.000001"; // Default: 0.000001 MNT
+const performOevUpdate = async (awardedSignature, signedDataTimestampCutoff, priceUpdateDetails) => {
+  const OevFeedUpdaterArtifact = await hre.artifacts.readArtifact("OevFeedUpdater");
+  const OevFeedUpdater = new Contract(deployments.OevFeedUpdater, OevFeedUpdaterArtifact.abi, targetNetworkWallet);
 
-  const OevSearcherMulticallV1Artifact = await hre.artifacts.readArtifact("OevSearcherMulticallV1");
+  const payOevBidCallbackData = {
+    signedDataArray: priceUpdateDetails,
+  };
 
-  const targetNetworkProvider = new JsonRpcProvider(process.env.TARGET_NETWORK_RPC_URL);
-  const targetNetworkWallet = Wallet.fromPhrase(process.env.MNEMONIC).connect(targetNetworkProvider);
-  const OevSearcherMulticallV1 = new Contract(
-    deployments.OevSearcherMulticallV1,
-    OevSearcherMulticallV1Artifact.abi,
-    targetNetworkWallet
-  );
+  const PayBidAndUpdateFeeds = {
+    signedDataTimestampCutoff,
+    signature: awardedSignature,
+    bidAmount: parseEther(BID_AMOUNT),
+    payOevBidCallbackData: payOevBidCallbackData,
+  };
 
-  const updateTx = await OevSearcherMulticallV1.externalMulticallWithValue(
-    [api3Contracts.deploymentAddresses.Api3ServerV1[CHAIN_ID]], // Targets: [Contract Addresses] The contract that can update the price feed
-    [awardedTransaction], // Data: [encoded functions] The transaction details with signature and data that allows us to update the price feed
-    [parseEther(BID_AMOUNT)], // Value: [Value sent] The matching bid amount that you bid on the OEV network (must match or update will fail)
-    {
-      value: parseEther(BID_AMOUNT), // Passing the value on the transaction
-    }
-  );
+  console.log("Performing Oracle update...");
+
+  const updateTx = await OevFeedUpdater.payBidAndUpdateFeed(PayBidAndUpdateFeeds, {
+    value: parseEther(BID_AMOUNT),
+  });
   await updateTx.wait();
-  console.log("Oracle update performed");
+  console.log("Oracle update performed, Tx Hash:", updateTx.hash);
   return updateTx;
 };
 

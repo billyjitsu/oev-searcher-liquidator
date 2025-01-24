@@ -6,12 +6,12 @@
   "license": "MIT",
   "scripts": {
     "build": "hardhat compile",
-    "deploy-multicall": "hardhat run scripts/deploy-multicall.js",
+    "deploy-oevfeedupdater": "hardhat run scripts/deploy-oevfeedupdater.js",
     "deposit-collateral": "hardhat run scripts/deposit-collateral.js",
     "submit-bid-update": "hardhat run scripts/submit-bid-update.js"
   },
   "devDependencies": {
-    "@api3/contracts": "^4.1.1",
+    "@api3/contracts": "^16.3.0",
     "@api3/dapi-management": "^1.49.0",
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "ethers": "^6.13.1",

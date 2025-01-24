@@ -14,7 +14,7 @@ const depositCollateral = async () => {
     oevNetworkWallet
   );
 
-  const amount = process.env.AMOUNT ?? "0.00001";
+  const amount = process.env.AMOUNT ?? "0.0001";
 
   const depositTx = await OevAuctionHouse.deposit({
     value: parseEther(amount),
