@@ -1,6 +1,6 @@
 # OEV Searcher Starter
 
->   An Example project to demonstrate how to use the OEV Network to place bids on dAPI IDs and then update those proxies using the encoded data from the OEV Network.
+>   An Example project to demonstrate how to use the OEV Network to place bids on dAPI IDs and then update dAPIs for the dAPP ID using the awarded signature from the OEV Network.
 
 ## Instructions
 
