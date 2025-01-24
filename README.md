@@ -42,9 +42,9 @@ AMOUNT=0.1 yarn deposit-collateral
 yarn submit-bid-update
 ```
 
-- The script fetches the OEV encoded values and signatures from the [public OEV endpoints](https://docs.api3.org/oev-searchers/in-depth/dapis/#oev-endpoints) for the `ETH/USD` dAPI, it then proceeds to place a bid of `0.01` MNT for the recurring `dAPP ID 1` auction round on mantle. Upon winning in the auction round, the script fetches the awarded signature and uses the signature and OEV encoded values to update the dAPP's `ETH/USD` dAPI. 
+- The script fetches the OEV encoded values and signatures from the [public OEV endpoints](https://docs.api3.org/oev-searchers/in-depth/dapis/#oev-endpoints) for the `ETH/USD` dAPI, it then proceeds to place a bid of `0.01` MNT for the [recurring](https://docs.api3.org/oev-searchers/in-depth/oev-searching.html#auction-schedule) `dappID 1` auction round on mantle. Upon winning in the auction round, the script fetches the awarded signature and uses the awarded signature and OEV encoded values to update the `dappID 1` `ETH/USD` dAPI. 
 
-- You can change the bid amount, dAPI Name via the CLI. For example to update the [BTC/USD dAPI](https://market.api3.org/mantle/btc-usd) on Mantle mainnet with a bid amount of `0.1` MNT, you can run the following command:
+- You can change the bid amount, dAPI Name via the CLI. For example to update `dappID 1` [BTC/USD dAPI](https://market.api3.org/mantle/btc-usd) on Mantle mainnet with a bid amount of `0.1` MNT, you can run the following command:
 
 ```
 BID_AMOUNT=0.1 DAPI_NAME="BTC/USD" yarn submit-bid-update
