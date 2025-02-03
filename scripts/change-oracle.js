@@ -3,7 +3,7 @@ require('dotenv').config();
 
 // Simplified wallet setup
 const mnemonic = process.env.MNEMONIC;
-const provider = new ethers.JsonRpcProvider(process.env.TESTNET_NETWORK_RPC_URL);
+const provider = new ethers.JsonRpcProvider(process.env.TARGET_NETWORK_RPC_URL);
 const wallet = ethers.Wallet.fromPhrase(mnemonic);
 const signer = wallet.connect(provider);
 
@@ -15,22 +15,21 @@ const abi = [
 ];
 
 // Configuration
-const newAssetProxyAddress = process.env.MOCKPROXY_ADDRESS;
+const newAssetProxyAddress = process.env.COLLATERAL_MOCKPROXY_ADDRESS; // Our simulated mock price
+const contractAddress = process.env.COLLATERAL_ASSET_PROXY; // The api3 adaptor address for price feed
+const usdcUsdProxy = process.env.USDCUSD_PROXY; 
 
 async function updateProxyAddress(newAssetProxy) {
-  const contractAddress = process.env.COLLATERAL_ASSET_PROXY;
-  const usdcUsdProxy = process.env.USDCUSD_PROXY;
-
   // Create contract instance
   const contract = new ethers.Contract(contractAddress, abi, signer);
 
   try {
     // Check if the signer is the owner of the contract
-    const contractOwner = await contract.owner();
-    if (contractOwner.toLowerCase() !== signer.address.toLowerCase()) {
-      console.error(`Error: The signer (${signer.address}) is not the owner of the contract (${contractOwner})`);
-      return;
-    }
+    // const contractOwner = await contract.owner();
+    // if (contractOwner.toLowerCase() !== signer.address.toLowerCase()) {
+    //   console.error(`Error: The signer (${signer.address}) is not the owner of the contract (${contractOwner})`);
+    //   return;
+    // }
 
     console.log(`Updating proxy addresses...`);
     console.log(`Contract Address: ${contractAddress}`);
@@ -44,10 +43,6 @@ async function updateProxyAddress(newAssetProxy) {
     // Wait for transaction to be mined
     const receipt = await tx.wait();
     console.log('Transaction confirmed in block:', receipt.blockNumber);
-
-    // Optional value checking
-    // const currentValue = await contract.latestAnswer();
-    // console.log('Current value:', currentValue.toString());
 
   } catch (error) {
     console.error('Error:', error);

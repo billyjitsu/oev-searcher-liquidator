@@ -3,7 +3,7 @@ require('dotenv').config();
 
 // Updated wallet setup for ethers v6
 const mnemonic = process.env.MNEMONIC;
-const provider = new ethers.JsonRpcProvider(process.env.TESTNET_NETWORK_RPC_URL);
+const provider = new ethers.JsonRpcProvider(process.env.TARGET_NETWORK_RPC_URL);
 const wallet = ethers.Wallet.fromPhrase(mnemonic);
 const signer = wallet.connect(provider);
 
@@ -12,7 +12,7 @@ const abi = [
   "function updateValue(int224 _value) external",
 ];
 
-const mockProxyAddress = process.env.MOCKPROXY_ADDRESS;
+const mockProxyAddress = process.env.COLLATERAL_MOCKPROXY_ADDRESS;
 
 async function updatePriceValue() {
   // Create contract instance
@@ -21,7 +21,7 @@ async function updatePriceValue() {
   try {
     console.log(`Updating mock proxy price`);
   
-    const newValue = 895903720000000000n; 
+    const newValue = 700903720000000000n; 
 
     // Call updateValue function
     const tx = await contract.updateValue(newValue);

@@ -1,6 +1,7 @@
-const { Wallet, Contract, JsonRpcProvider, keccak256, solidityPacked, parseEther, MaxUint256 } = require("ethers");
+const { Wallet, Contract, JsonRpcProvider, keccak256, solidityPacked, parseEther, MaxUint256, HDNodeWallet, formatUnits } = require("ethers");
 const api3Contracts = require("@api3/contracts");
 const { fetchOEVSignedData } = require("./fetch-oevsigneddata");
+const deployments = require("./deployments.json");
 const dotenv = require("dotenv");
 
 dotenv.config();
@@ -16,15 +17,15 @@ const oevNetworkProvider = new JsonRpcProvider(process.env.OEV_NETWORK_RPC_URL);
 const targetNetworkProvider = new JsonRpcProvider(process.env.TARGET_NETWORK_RPC_URL);
 
 // Get wallets from mnemonic
-const hdNode = Wallet.fromPhrase(process.env.MNEMONIC);
+const hdNode = HDNodeWallet.fromPhrase(process.env.MNEMONIC);
 const oevNetworkWallet = hdNode.connect(oevNetworkProvider);
 const targetNetworkWallet = hdNode.connect(targetNetworkProvider);
 
-// Get the user to liquidate (second wallet from mnemonic)
-const userToLiquidate = Wallet.fromPhrase(process.env.MNEMONIC).derivePath("m/44'/60'/0'/0/1");
-console.log('User to liquidate:', userToLiquidate.address);
+// Get the user to liquidate
+const userToLiquidate = process.env.WALLET_TO_LIQUIDATE;
+console.log('User to liquidate:', userToLiquidate);
 
-const BID_AMOUNT = process.env.BID_AMOUNT || "0.01";
+const BID_AMOUNT = process.env.BID_AMOUNT || "0.00001";
 const DAPI_NAME = process.env.DAPI_NAME || "ETH/USD";
 
 // Contract ABIs
@@ -32,6 +33,68 @@ const LENDING_POOL_ABI = [
     "function getUserAccountData(address) view returns (uint256,uint256,uint256,uint256,uint256,uint256)",
     "function liquidationCall(address collateralAsset, address debtAsset, address user, uint256 debtToCover, bool receiveAToken) external returns (uint256, string)"
 ];
+
+// Full ABI for the OevLiquidator contract including struct definitions
+const LIQUIDATOR_ABI = [
+    "function payBidAndUpdateFeed((uint32,bytes,uint256,(bytes[],(address,address,address,uint256)))) external payable"
+];
+
+const getUserData = async (lendingPool, userAddress) => {
+    try {
+        console.log('\nFetching detailed user position data...');
+        const userData = await lendingPool.getUserAccountData(userAddress);
+        
+        const [
+            totalCollateralETH,
+            totalDebtETH,
+            availableBorrowsETH,
+            currentLiquidationThreshold,
+            ltv,
+            healthFactor
+        ] = userData;
+
+        const formattedData = {
+            totalCollateralETH: formatUnits(totalCollateralETH, 18),
+            totalDebtETH: formatUnits(totalDebtETH, 18),
+            availableBorrowsETH: formatUnits(availableBorrowsETH, 18),
+            currentLiquidationThreshold: Number(currentLiquidationThreshold) / 100,
+            ltv: Number(ltv) / 100,
+            healthFactor: formatUnits(healthFactor, 18),
+            maxLiquidatableAmount: formatUnits(totalDebtETH * 50n / 100n, 18)
+        };
+
+        console.log('\nPosition Details:');
+        console.log('------------------');
+        console.log(`Total Collateral (ETH): ${formattedData.totalCollateralETH}`);
+        console.log(`Total Debt (ETH): ${formattedData.totalDebtETH}`);
+        console.log(`Available Borrows (ETH): ${formattedData.availableBorrowsETH}`);
+        console.log(`Liquidation Threshold: ${formattedData.currentLiquidationThreshold}%`);
+        console.log(`LTV: ${formattedData.ltv}%`);
+        console.log(`Health Factor: ${formattedData.healthFactor}`);
+        console.log(`Max Liquidatable Amount (ETH): ${formattedData.maxLiquidatableAmount}`);
+
+        return {
+            ...formattedData,
+            rawHealthFactor: healthFactor
+        };
+    } catch (error) {
+        console.error('Error getting user data:', error);
+        throw error;
+    }
+};
+
+const checkHealthFactor = async (lendingPool, userAddress) => {
+    try {
+        console.log('\nChecking health factor...');
+        const userData = await getUserData(lendingPool, userAddress);
+        const healthFactorValue = Number(userData.healthFactor);
+        console.log('Health Factor:', healthFactorValue.toFixed(6));
+        return healthFactorValue < 1.0;
+    } catch (error) {
+        console.error('Error checking health factor:', error);
+        throw error;
+    }
+};
 
 const determineSignedDataTimestampCutoff = () => {
     const auctionOffset = Number(
@@ -49,7 +112,7 @@ const determineSignedDataTimestampCutoff = () => {
             currentTimestamp,
             biddingPhaseEndTimestamp,
             auctionOffset
-          );
+        );
         signedDataTimestampCutoff += OEV_AUCTION_LENGTH_SECONDS;
     }
 
@@ -70,11 +133,77 @@ const getBidDetails = (liquidatorAddress) => {
     return ethers.AbiCoder.defaultAbiCoder().encode(["address", "bytes32"], [liquidatorAddress, nonce]);
 };
 
-const checkHealthFactor = async (lendingPool, userAddress) => {
-    console.log('Checking health factor...');
-    const [,,,,, healthFactor] = await lendingPool.getUserAccountData(userAddress);
-    console.log('Health Factor:', healthFactor);
-    return healthFactor < parseEther("1");
+const performOevUpdateAndLiquidation = async (
+    awardedSignature,
+    signedDataTimestampCutoff,
+    priceUpdateDetails,
+    liquidationParams
+) => {
+    const liquidator = new Contract(
+        deployments.OevLiquidator,
+        LIQUIDATOR_ABI,
+        targetNetworkWallet
+    );
+
+    // Create the nested tuple structure that matches the Solidity structs
+    const params = [
+        signedDataTimestampCutoff,
+        awardedSignature,
+        parseEther(BID_AMOUNT),
+        [
+            priceUpdateDetails,
+            [
+                liquidationParams.collateralAsset,
+                liquidationParams.debtAsset,
+                liquidationParams.userToLiquidate,
+                liquidationParams.debtToCover
+            ]
+        ]
+    ];
+
+    console.log("Performing Oracle update and liquidation...");
+    const updateTx = await liquidator.payBidAndUpdateFeed(params, {
+        value: parseEther(BID_AMOUNT)
+    });
+    
+    await updateTx.wait();
+    console.log("Oracle update and liquidation performed:", updateTx.hash);
+    return updateTx;
+};
+
+const reportFulfillment = async (updateTx, bidTopic, bidDetails, bidId) => {
+    const OevAuctionHouseArtifact = await hre.artifacts.readArtifact("OevAuctionHouse");
+    const OevAuctionHouse = new Contract(
+        api3Contracts.deploymentAddresses.OevAuctionHouse["4913"],
+        OevAuctionHouseArtifact.abi,
+        oevNetworkWallet
+    );
+    const bidDetailsHash = keccak256(bidDetails);
+
+    const reportTx = await OevAuctionHouse.reportFulfillment(
+        bidTopic,
+        bidDetailsHash,
+        updateTx.hash
+    );
+    await reportTx.wait();
+    console.log("Oracle update reported");
+
+    const confirmedFulfillmentTx = await new Promise(async (resolve, reject) => {
+        console.log("Waiting for confirmation of fulfillment...");
+        const OevAuctionHouseFilter = OevAuctionHouse.filters.ConfirmedFulfillment(null, bidTopic, bidId, null, null);
+        while (true) {
+            const currentBlock = await oevNetworkProvider.getBlockNumber();
+            const confirmEvent = await OevAuctionHouse.queryFilter(OevAuctionHouseFilter, currentBlock - 10, currentBlock);
+            if (confirmEvent.length > 0) {
+                console.log("Confirmed Fulfillment", confirmEvent[0].transactionHash);
+                resolve(confirmEvent);
+                break;
+            }
+            await new Promise((r) => setTimeout(r, 100));
+        }
+    });
+
+    return confirmedFulfillmentTx;
 };
 
 const placeBid = async () => {
@@ -85,24 +214,9 @@ const placeBid = async () => {
         targetNetworkWallet
     );
 
-    // Get OEV signed data
-    const priceUpdateDetails = await fetchOEVSignedData(DAPI_NAME);
-    const targetChainId = (await targetNetworkProvider.getNetwork()).chainId;
-
-    const OevAuctionHouseArtifact = await hre.artifacts.readArtifact("OevAuctionHouse");
-      const OevAuctionHouse = new Contract(
-        api3Contracts.deploymentAddresses.OevAuctionHouse["4913"],
-        OevAuctionHouseArtifact.abi,
-        oevNetworkWallet
-      );
-
-    const signedDataTimestampCutoff = determineSignedDataTimestampCutoff();
-    const nextBiddingPhaseEndTimestamp = signedDataTimestampCutoff + OEV_AUCTION_LENGTH_SECONDS;
-    const bidTopic = getBidTopic(signedDataTimestampCutoff);
-    const bidDetails = getBidDetails(deployments.OevLiquidator);
-
+    // Check if position is liquidatable
     console.log("Checking if position is liquidatable...");
-    const isLiquidatable = await checkHealthFactor(lendingPool, userToLiquidate.address);
+    const isLiquidatable = await checkHealthFactor(lendingPool, userToLiquidate);
     
     if (!isLiquidatable) {
         console.log("Position is not liquidatable. Aborting...");
@@ -111,63 +225,75 @@ const placeBid = async () => {
 
     console.log("Position is liquidatable. Proceeding with bid...");
 
+    // Get OEV signed data
+    const priceUpdateDetails = await fetchOEVSignedData(DAPI_NAME);
+    const targetChainId = (await targetNetworkProvider.getNetwork()).chainId;
+
+    const OevAuctionHouseArtifact = await hre.artifacts.readArtifact("OevAuctionHouse");
+    const OevAuctionHouse = new Contract(
+        api3Contracts.deploymentAddresses.OevAuctionHouse["4913"],
+        OevAuctionHouseArtifact.abi,
+        oevNetworkWallet
+    );
+
+    const signedDataTimestampCutoff = determineSignedDataTimestampCutoff();
+    const nextBiddingPhaseEndTimestamp = signedDataTimestampCutoff + OEV_AUCTION_LENGTH_SECONDS;
+    const bidTopic = getBidTopic(signedDataTimestampCutoff);
+    const bidDetails = getBidDetails(deployments.OevLiquidator);
+
     console.log("Placing bid with the following details:");
-  console.log("Bid Topic:", bidTopic);
-  console.log("Bid Details:", bidDetails);
-  console.log("Current Timestamp:", Math.floor(Date.now() / 1000));
-  console.log("Signed Data Timestamp Cutoff:", signedDataTimestampCutoff);
-  console.log("Next Bidding Phase End Timestamp:", nextBiddingPhaseEndTimestamp);
+    console.log("Bid Topic:", bidTopic);
+    console.log("Bid Details:", bidDetails);
+    console.log("Current Timestamp:", Math.floor(Date.now() / 1000));
+    console.log("Signed Data Timestamp Cutoff:", signedDataTimestampCutoff);
+    console.log("Next Bidding Phase End Timestamp:", nextBiddingPhaseEndTimestamp);
 
     // Place bid
     const placedbidTx = await OevAuctionHouse.placeBidWithExpiration(
-        bidTopic, // The bid topic of the auctioneer instance
-            parseInt(targetChainId), // Chain ID of the dAPI proxy
-            parseEther(BID_AMOUNT), // The amount of chain native currency you are bidding to win this auction and perform the oracle update
-            bidDetails, // The details about the bid, proxy address, condition, price, your deployed multicall and random
-            MaxUint256, // Collateral Basis Points is set to max
-            MaxUint256, // Protocol Fee Basis Points is set to max
-            nextBiddingPhaseEndTimestamp // The expiration time of the bid
+        bidTopic,
+        parseInt(targetChainId),
+        parseEther(BID_AMOUNT),
+        bidDetails,
+        MaxUint256,
+        MaxUint256,
+        nextBiddingPhaseEndTimestamp
     );
     
     console.log("Bid placed:", placedbidTx.hash);
-    console.log("Bid placed");
 
-    // Compute the bid ID
-      const bidId = keccak256(
+    const bidId = keccak256(
         solidityPacked(
-          ["address", "bytes32", "bytes32"],
-          [
-            oevNetworkWallet.address, // The wallet address if the signer doing the bid (public of your private key)
-            bidTopic, // Details of the chain and price feed we want to update encoded
-            keccak256(bidDetails), // The details about the bid, proxy address, condition, price, your deployed multicall and random
-          ]
+            ["address", "bytes32", "bytes32"],
+            [
+                oevNetworkWallet.address,
+                bidTopic,
+                keccak256(bidDetails),
+            ]
         )
-      );
-    
+    );
 
     // Wait for bid to be awarded
     const awardedSignature = await new Promise(async (resolve, reject) => {
         console.log("Waiting for bid to be awarded...");
         const OevAuctionHouseFilter = OevAuctionHouse.filters.AwardedBid(null, bidTopic, bidId, null, null);
         while (true) {
-          const bid = await OevAuctionHouse.bids(bidId);
-          if (bid[0] === 2n) {
-            console.log("Bid Awarded");
-            const currentBlock = await oevNetworkProvider.getBlockNumber();
-            const awardEvent = await OevAuctionHouse.queryFilter(OevAuctionHouseFilter, currentBlock - 10, currentBlock);
-            resolve(awardEvent[0].args[3]);
-            break;
-          }
-          // Sleep for 0.1 second
-          await new Promise((r) => setTimeout(r, 100));
+            const bid = await OevAuctionHouse.bids(bidId);
+            if (bid[0] === 2n) {
+                console.log("Bid Awarded");
+                const currentBlock = await oevNetworkProvider.getBlockNumber();
+                const awardEvent = await OevAuctionHouse.queryFilter(OevAuctionHouseFilter, currentBlock - 10, currentBlock);
+                resolve(awardEvent[0].args[3]);
+                break;
+            }
+            await new Promise((r) => setTimeout(r, 100));
         }
-      });
+    });
     
     // Prepare liquidation parameters
     const liquidationParams = {
         collateralAsset: process.env.TOKEN_TO_RECEIVE,
-        debtAsset: process.env.TOKEN_ADDRESS,
-        userToLiquidate: userToLiquidate.address,
+        debtAsset: process.env.TOKEN_TO_REPAY_ADDRESS,
+        userToLiquidate: userToLiquidate,
         debtToCover: MaxUint256
     };
 
@@ -181,79 +307,6 @@ const placeBid = async () => {
 
     // Report fulfillment
     await reportFulfillment(updateTx, bidTopic, bidDetails, bidId);
-};
-
-const performOevUpdateAndLiquidation = async (
-    awardedSignature,
-    signedDataTimestampCutoff,
-    priceUpdateDetails,
-    liquidationParams
-) => {
-    const liquidator = new Contract(
-        process.env.LIQUIDATOR_ADDRESS,
-        [
-            "function payBidAndUpdateFeed((uint32,bytes,uint256,(bytes[],address,address,address,uint256))) external payable"
-        ],
-        targetNetworkWallet
-    );
-
-    const payOevBidCallbackData = {
-        signedDataArray: priceUpdateDetails,
-        liquidationParams
-    };
-
-    const PayBidUpdateFeedsandLiquidate = {
-        signedDataTimestampCutoff,
-        signature: awardedSignature,
-        bidAmount: parseEther(BID_AMOUNT),
-        payOevBidCallbackData: payOevBidCallbackData,
-    };
-
-    console.log("Performing Oracle update and liquidation...");
-    const updateTx = await liquidator.payBidAndUpdateFeed(PayBidUpdateFeedsandLiquidate, {
-        value: parseEther(BID_AMOUNT)
-    });
-    await updateTx.wait();
-    console.log("Oracle update and liquidation performed:", updateTx.hash);
-    return updateTx;
-};
-
-const reportFulfillment = async (updateTx, bidTopic, bidDetails, bidId) => {
-  const oevNetworkProvider = new JsonRpcProvider(process.env.OEV_NETWORK_RPC_URL);
-  const oevNetworkWallet = Wallet.fromPhrase(process.env.MNEMONIC).connect(oevNetworkProvider);
-  const OevAuctionHouseArtifact = await hre.artifacts.readArtifact("OevAuctionHouse");
-  const OevAuctionHouse = new Contract(
-    api3Contracts.deploymentAddresses.OevAuctionHouse["4913"],
-    OevAuctionHouseArtifact.abi,
-    oevNetworkWallet
-  );
-  const bidDetailsHash = keccak256(bidDetails);
-
-  const reportTx = await OevAuctionHouse.reportFulfillment(
-    bidTopic, // The bid topic of the auctioneer instance
-    bidDetailsHash, // Hash of the bid details
-    updateTx.hash // The transaction hash of the update transaction
-  );
-  await reportTx.wait();
-  console.log("Oracle update reported");
-
-  const confirmedFulfillmentTx = await new Promise(async (resolve, reject) => {
-    console.log("Waiting for confirmation of fulfillment...");
-    const OevAuctionHouseFilter = OevAuctionHouse.filters.ConfirmedFulfillment(null, bidTopic, bidId, null, null);
-    while (true) {
-      const currentBlock = await oevNetworkProvider.getBlockNumber();
-      const confirmEvent = await OevAuctionHouse.queryFilter(OevAuctionHouseFilter, currentBlock - 10, currentBlock);
-      if (confirmEvent.length > 0) {
-        console.log("Confirmed Fulfillment", confirmEvent[0].transactionHash);
-        resolve(confirmEvent);
-        break;
-      }
-      // Sleep for 0.1 second
-      await new Promise((r) => setTimeout(r, 100));
-    }
-  });
-
-  return confirmedFulfillmentTx;
 };
 
 // Run the script

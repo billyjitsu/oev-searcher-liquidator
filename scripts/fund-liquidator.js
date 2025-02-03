@@ -15,7 +15,7 @@ async function fundLiquidator() {
     "function approve(address spender, uint256 amount) returns (bool)"
   ];
 
-  const token = new Contract(process.env.TOKEN_ADDRESS, erc20Abi, wallet);
+  const token = new Contract(process.env.TOKEN_TO_REPAY_ADDRESS, erc20Abi, wallet);
   const decimals = await token.decimals();
   const amount = parseUnits("2000", decimals);
 
