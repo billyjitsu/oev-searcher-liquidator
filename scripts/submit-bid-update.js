@@ -17,7 +17,7 @@ const oevNetworkWallet = Wallet.fromPhrase(process.env.MNEMONIC).connect(oevNetw
 const targetNetworkProvider = new JsonRpcProvider(process.env.TARGET_NETWORK_RPC_URL);
 const targetNetworkWallet = Wallet.fromPhrase(process.env.MNEMONIC).connect(targetNetworkProvider);
 
-const BID_AMOUNT = process.env.BID_AMOUNT || "0.01"; // Default: 0.01 MNT
+const BID_AMOUNT = process.env.BID_AMOUNT || "0.001"; // Default: 0.01 MNT
 const DAPI_NAME = process.env.DAPI_NAME || "ETH/USD"; // Default: ETH/USD
 
 const determineSignedDataTimestampCutoff = () => {
@@ -148,7 +148,6 @@ const performOevUpdate = async (awardedSignature, signedDataTimestampCutoff, pri
   };
 
   console.log("Performing Oracle update...");
-
   const updateTx = await OevFeedUpdater.payBidAndUpdateFeed(PayBidAndUpdateFeeds, {
     value: parseEther(BID_AMOUNT),
   });
