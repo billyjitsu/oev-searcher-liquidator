@@ -41,7 +41,7 @@ const LIQUIDATOR_ABI = [
 
 const getUserData = async (lendingPool, userAddress) => {
     try {
-        console.log('\nFetching detailed user position data...');
+        console.log('Fetching detailed user position data...');
         const userData = await lendingPool.getUserAccountData(userAddress);
         
         const [
@@ -63,15 +63,17 @@ const getUserData = async (lendingPool, userAddress) => {
             maxLiquidatableAmount: formatUnits(totalDebtETH * 50n / 100n, 18)
         };
 
-        console.log('\nPosition Details:');
-        console.log('------------------');
-        console.log(`Total Collateral (ETH): ${formattedData.totalCollateralETH}`);
-        console.log(`Total Debt (ETH): ${formattedData.totalDebtETH}`);
-        console.log(`Available Borrows (ETH): ${formattedData.availableBorrowsETH}`);
-        console.log(`Liquidation Threshold: ${formattedData.currentLiquidationThreshold}%`);
-        console.log(`LTV: ${formattedData.ltv}%`);
-        console.log(`Health Factor: ${formattedData.healthFactor}`);
-        console.log(`Max Liquidatable Amount (ETH): ${formattedData.maxLiquidatableAmount}`);
+        // If you want to log the details, uncomment the following lines
+
+        // console.log('\nPosition Details:');
+        // console.log('------------------');
+        // console.log(`Total Collateral (ETH): ${formattedData.totalCollateralETH}`);
+        // console.log(`Total Debt (ETH): ${formattedData.totalDebtETH}`);
+        // console.log(`Available Borrows (ETH): ${formattedData.availableBorrowsETH}`);
+        // console.log(`Liquidation Threshold: ${formattedData.currentLiquidationThreshold}%`);
+        // console.log(`LTV: ${formattedData.ltv}%`);
+        // console.log(`Health Factor: ${formattedData.healthFactor}`);
+        // console.log(`Max Liquidatable Amount (ETH): ${formattedData.maxLiquidatableAmount}`);
 
         return {
             ...formattedData,
