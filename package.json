@@ -6,10 +6,14 @@
   "license": "MIT",
   "scripts": {
     "build": "hardhat compile",
-    "deploy-oevfeedupdater": "hardhat run scripts/deploy-oevfeedupdater.js",
-    "deploy-oevfeedliquidator": "hardhat run scripts/deploy-oevfeedliquidator.js",
     "deposit-collateral": "hardhat run scripts/deposit-collateral.js",
-    "submit-bid-update": "hardhat run scripts/submit-bid-update.js"
+    "deploy-oevfeedupdater": "hardhat run scripts/deploy-oevfeedupdater.js",
+    "submit-bid-update": "hardhat run scripts/submit-bid-update.js",
+    "deploy-oevfeedliquidator": "hardhat run scripts/deploy-oevfeedliquidator.js",
+    "fund-liquidator": "hardhat run scripts/fund-liquidator.js",
+    "updateMockPrice": "hardhat run scripts/updateMockPrice.js",
+    "change-oracle": "hardhat run scripts/change-oracle.js",
+    "submit-bid-update-liquidate": "hardhat run scripts/submit-bid-update-liquidate.js"
   },
   "devDependencies": {
     "@api3/contracts": "^16.3.0",
