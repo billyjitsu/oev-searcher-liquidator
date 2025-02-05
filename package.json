@@ -11,8 +11,7 @@
     "submit-bid-update": "hardhat run scripts/submit-bid-update.js",
     "deploy-oevfeedliquidator": "hardhat run scripts/deploy-oevfeedliquidator.js",
     "fund-liquidator": "hardhat run scripts/fund-liquidator.js",
-    "updateMockPrice": "hardhat run scripts/updateMockPrice.js",
-    "change-oracle": "hardhat run scripts/change-oracle.js",
+    "updateMockPriceandOracle": "hardhat run scripts/updateMockPriceandOracle.js",
     "submit-bid-update-liquidate": "hardhat run scripts/submit-bid-update-liquidate.js"
   },
   "devDependencies": {

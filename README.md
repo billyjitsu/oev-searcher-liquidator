@@ -65,18 +65,11 @@ yarn deploy-oevfeedliquidator
 yarn fund-liquidator
 ```
 
-### Update the Mock Price (demonstration only)
+### Update the Mock Price and the Oracle Source (demonstration only)
 
-- During a demonstration or testing of OEV liquidations.  It's impossible to set a live price feed to a value that can set off a liquidation.  In order to show how it works, we use a "Mocked" oracle and we set the value in order to perform the liquidation. In the script, set the value you want to update the oracle to push to the lend dapp by running `updateMockPrice`.  This price can be updated multiple times for your testing needs. * You must be the Owner/deployer of the Mock Price contracts. (.env COLLATERAL_MOCKPROXY_ADDRESS)
+- During a demonstration or testing of OEV liquidations.  It's impossible to set a live price feed to a value that can set off a liquidation.  In order to show how it works, we use a "Mocked" oracle and we set the value in order to perform the liquidation. In the script, set the value you want to update the oracle to push to the lend dapp by running `updateMockPriceandOracle`.  This price can be updated multiple times for your testing needs. * You must be the Owner/deployer of the Mock Price contracts. (.env COLLATERAL_MOCKPROXY_ADDRESS). We must also change the oracle source in our example for our borrow/lending dapp to reflect our new mock price.  As the owner of the borrow/lending dapp, we have the ability to switch where our dapps gets their data from.  Running `updateMockPriceandOracle` will update the oracle source for your feed for that specific adaptor (.env file COLLATERAL_ASSET_PROXY to COLLATERAL_MOCKPROXY_ADDRESS)
 ```bash
-yarn updateMockPrice
-```
-
-### Change the Oracle Source (demonstration only)
-
-- We must change the oracle source in our example for our borrow/lending dapp to reflect our new mock price. (In the previous script, we just changed the value).  As the owner of the borrow/lending dapp, we have the ability to switch where our dapps gets their data from.  Running `change-oracle` will update the oracle source for your feed for that specific adaptor (.env file COLLATERAL_ASSET_PROXY to COLLATERAL_MOCKPROXY_ADDRESS)
-```bash
-yarn change-oracle
+yarn updateMockPriceandOracle
 ```
 
 ### Place Bid, Update dAPI Proxy and Liquidate

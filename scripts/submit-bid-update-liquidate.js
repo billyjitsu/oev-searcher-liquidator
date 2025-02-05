@@ -26,7 +26,7 @@ const userToLiquidate = process.env.WALLET_TO_LIQUIDATE;
 console.log('User to liquidate:', userToLiquidate);
 
 const BID_AMOUNT = process.env.BID_AMOUNT || "0.00001";
-const DAPI_NAME = process.env.DAPI_NAME || "ETH/USD";
+const DAPI_NAME = process.env.DAPI_NAME || "API3/USD";
 
 // Contract ABIs
 const LENDING_POOL_ABI = [
@@ -34,9 +34,13 @@ const LENDING_POOL_ABI = [
     "function liquidationCall(address collateralAsset, address debtAsset, address user, uint256 debtToCover, bool receiveAToken) external returns (uint256, string)"
 ];
 
-// Full ABI for the OevLiquidator contract including struct definitions
 const LIQUIDATOR_ABI = [
     "function payBidAndUpdateFeed((uint32,bytes,uint256,(bytes[],(address,address,address,uint256)))) external payable"
+];
+
+const PRICE_ORACLE_ABI = [
+    "function getAssetPrice(address asset) external view returns (uint256)",
+    "function getSourceOfAsset(address asset) external view returns (uint256)"
 ];
 
 const getUserData = async (lendingPool, userAddress) => {
@@ -63,17 +67,15 @@ const getUserData = async (lendingPool, userAddress) => {
             maxLiquidatableAmount: formatUnits(totalDebtETH * 50n / 100n, 18)
         };
 
-        // If you want to log the details, uncomment the following lines
-
-        // console.log('\nPosition Details:');
-        // console.log('------------------');
-        // console.log(`Total Collateral (ETH): ${formattedData.totalCollateralETH}`);
-        // console.log(`Total Debt (ETH): ${formattedData.totalDebtETH}`);
-        // console.log(`Available Borrows (ETH): ${formattedData.availableBorrowsETH}`);
-        // console.log(`Liquidation Threshold: ${formattedData.currentLiquidationThreshold}%`);
-        // console.log(`LTV: ${formattedData.ltv}%`);
-        // console.log(`Health Factor: ${formattedData.healthFactor}`);
-        // console.log(`Max Liquidatable Amount (ETH): ${formattedData.maxLiquidatableAmount}`);
+        console.log('\nPosition Details:');
+        console.log('------------------');
+        console.log(`Total Collateral (ETH): ${formattedData.totalCollateralETH}`);
+        console.log(`Total Debt (ETH): ${formattedData.totalDebtETH}`);
+        console.log(`Available Borrows (ETH): ${formattedData.availableBorrowsETH}`);
+        console.log(`Liquidation Threshold: ${formattedData.currentLiquidationThreshold}%`);
+        console.log(`LTV: ${formattedData.ltv}%`);
+        console.log(`Health Factor: ${formattedData.healthFactor}`);
+        console.log(`Max Liquidatable Amount (ETH): ${formattedData.maxLiquidatableAmount}`);
 
         return {
             ...formattedData,
@@ -85,19 +87,44 @@ const getUserData = async (lendingPool, userAddress) => {
     }
 };
 
-const checkHealthFactor = async (lendingPool, userAddress) => {
+const calculateProjectedHealthFactor = async (lendingPool, userAddress, newPrice) => {
     try {
-        console.log('\nChecking health factor...');
         const userData = await getUserData(lendingPool, userAddress);
-        const healthFactorValue = Number(userData.healthFactor);
-        console.log('Health Factor:', healthFactorValue.toFixed(6));
-        return healthFactorValue < 1.0;
+        const priceOracle = new Contract(
+            process.env.AAVE_PRICE_ORACLE_MANAGER,
+            PRICE_ORACLE_ABI,
+            targetNetworkWallet
+        );
+
+        // Get current prices from oracle
+        const collateralPriceWei = await priceOracle.getAssetPrice(process.env.TOKEN_TO_RECEIVE);
+        const debtPriceWei = await priceOracle.getAssetPrice(process.env.TOKEN_TO_REPAY_ADDRESS);
+        
+        const collateralPrice = formatUnits(collateralPriceWei, 8);
+        const debtPrice = formatUnits(debtPriceWei, 8);
+
+        // Convert ETH values to actual token amounts and USD values
+        const collateralTokens = parseFloat(userData.totalCollateralETH) * parseFloat(collateralPrice);
+        const debtTokens = parseFloat(userData.totalDebtETH) * parseFloat(debtPrice);
+
+        const newCollateralValueUSD = collateralTokens * newPrice;
+        const projectedHealthFactor = (newCollateralValueUSD * userData.currentLiquidationThreshold) / debtTokens;
+
+        console.log({
+            currentCollateralPrice: collateralPrice,
+            currentDebtPrice: debtPrice,
+            collateralTokens,
+            debtTokens,
+            newCollateralValueUSD,
+            projectedHealthFactor: projectedHealthFactor.toFixed(6)
+        });
+
+        return projectedHealthFactor;
     } catch (error) {
-        console.error('Error checking health factor:', error);
+        console.error('Error:', error);
         throw error;
     }
 };
-
 const determineSignedDataTimestampCutoff = () => {
     const auctionOffset = Number(
         BigInt(keccak256(solidityPacked(["uint256"], [DAPP_ID]))) % BigInt(OEV_AUCTION_LENGTH_SECONDS)
@@ -147,7 +174,6 @@ const performOevUpdateAndLiquidation = async (
         targetNetworkWallet
     );
 
-    // Create the nested tuple structure that matches the Solidity structs
     const params = [
         signedDataTimestampCutoff,
         awardedSignature,
@@ -209,26 +235,27 @@ const reportFulfillment = async (updateTx, bidTopic, bidDetails, bidId) => {
 };
 
 const placeBid = async () => {
-    // Initialize contracts
     const lendingPool = new Contract(
         process.env.LENDING_POOL_ADDRESS,
         LENDING_POOL_ABI,
         targetNetworkWallet
     );
 
-    // Check if position is liquidatable
-    console.log("Checking if position is liquidatable...");
-    const isLiquidatable = await checkHealthFactor(lendingPool, userToLiquidate);
+    const { priceUpdateDetailsEncoded, medianPrice } = await fetchOEVSignedData(DAPI_NAME);
     
-    if (!isLiquidatable) {
-        console.log("Position is not liquidatable. Aborting...");
-        return;
-    }
+    const projectedHealthFactor = await calculateProjectedHealthFactor(
+        lendingPool, 
+        userToLiquidate, 
+        medianPrice
+    );
+    
+    // if (projectedHealthFactor >= 1.0) {
+    //     console.log("Position would not be liquidatable with new price. Aborting...");
+    //     return;
+    // }
 
-    console.log("Position is liquidatable. Proceeding with bid...");
+    console.log("Position would be liquidatable with new price. Proceeding with bid...");
 
-    // Get OEV signed data
-    const priceUpdateDetails = await fetchOEVSignedData(DAPI_NAME);
     const targetChainId = (await targetNetworkProvider.getNetwork()).chainId;
 
     const OevAuctionHouseArtifact = await hre.artifacts.readArtifact("OevAuctionHouse");
@@ -250,7 +277,6 @@ const placeBid = async () => {
     console.log("Signed Data Timestamp Cutoff:", signedDataTimestampCutoff);
     console.log("Next Bidding Phase End Timestamp:", nextBiddingPhaseEndTimestamp);
 
-    // Place bid
     const placedbidTx = await OevAuctionHouse.placeBidWithExpiration(
         bidTopic,
         parseInt(targetChainId),
@@ -274,7 +300,6 @@ const placeBid = async () => {
         )
     );
 
-    // Wait for bid to be awarded
     const awardedSignature = await new Promise(async (resolve, reject) => {
         console.log("Waiting for bid to be awarded...");
         const OevAuctionHouseFilter = OevAuctionHouse.filters.AwardedBid(null, bidTopic, bidId, null, null);
@@ -291,7 +316,6 @@ const placeBid = async () => {
         }
     });
     
-    // Prepare liquidation parameters
     const liquidationParams = {
         collateralAsset: process.env.TOKEN_TO_RECEIVE,
         debtAsset: process.env.TOKEN_TO_REPAY_ADDRESS,
@@ -299,17 +323,14 @@ const placeBid = async () => {
         debtToCover: MaxUint256
     };
 
-    // Perform OEV update and liquidation
     const updateTx = await performOevUpdateAndLiquidation(
         awardedSignature,
         signedDataTimestampCutoff,
-        priceUpdateDetails,
+        priceUpdateDetailsEncoded,
         liquidationParams
     );
 
-    // Report fulfillment
     await reportFulfillment(updateTx, bidTopic, bidDetails, bidId);
 };
 
-// Run the script
 placeBid().catch(console.error);
