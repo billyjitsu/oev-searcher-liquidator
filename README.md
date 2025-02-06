@@ -1,6 +1,6 @@
 # OEV Searcher Liquidator
 
->   An Example project to demonstrate how to use the OEV Network to place bids on dAPI IDs and then update dAPIs for the dAPP ID using the awarded signature from the OEV Network and finally performe a liquidation.
+>   An Example project to demonstrate how to use the OEV Network to place bids on dAPI IDs and then update dAPIs for the dAPP ID using the awarded signature from the OEV Network and finally performe a liquidation.  This repo is a companion repo that references contracts deployed from your [AAVE fork project](https://github.com/billyjitsu/aave-v2-cli-demo) 
 
 ## Instructions
 
@@ -11,6 +11,24 @@
 ```bash
 yarn
 ```
+
+### Understanding the .env sources
+
+You will need to have deployed your own fork of [AAVE](https://github.com/billyjitsu/aave-v2-cli-demo) from the above repo to have full control of all contracts. You will be pulling contract addresses from the `references.json` file in the API3 adaptor folder and also from the `deployed-contracts.json` from the root folder.
+
+- MNEMONIC="Your 12 word phrase"
+- OEV_NETWORK_RPC_URL="https://oev-network.calderachain.xyz/http"
+- TARGET_NETWORK_RPC_URL="The chain RPC that you are liquidating on"
+- LENDING_POOL_ADDRESS="From `deployed-contracts.json` list"
+- TOKEN_TO_REPAY_ADDRESS="From the `references.json` list"
+- TOKEN_TO_RECEIVE="From the `references.json` list"
+- USDCUSD_PROXY="The price feed adaptor address from `references.json`"
+- COLLATERAL_MOCKPROXY_ADDRESS="Mock price feed address from `references.json`"
+- COLLATERAL_ASSET_PROXY="The live feed reference, from references.json or even from `market.api3.org`"
+- WALLET_TO_LIQUIDATE="What wallet are you liquidating"
+- ORIGINAL_API3_ORACLE_PROXY="direct `market.api3.org` proxy address of asset"
+- AAVE_PRICE_ORACLE_MANAGER=""AaveOracle" in the `deployed-contracts.json`"
+
 ### Bridge and Deposit
 
 - Bridge ETH to the OEV Network using the [OEV Network bridge](https://oev-network.bridge.caldera.xyz/)
