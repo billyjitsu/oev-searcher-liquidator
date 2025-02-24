@@ -86,10 +86,7 @@ contract OevLiquidator is Ownable, IApi3ServerV1OevExtensionOevBidPayer, IFlashL
     ) external override returns (bytes32) {
         require(msg.sender == address(api3ServerV1OevExtension), "Unauthorized");
 
-        PayOevBidCallbackData memory data = abi.decode(
-            _data,
-            (PayOevBidCallbackData)
-        );
+        PayOevBidCallbackData memory data = abi.decode(_data, (PayOevBidCallbackData));
 
         // First update the price feed
         api3ServerV1OevExtension.updateDappOevDataFeed(dappId, data.signedDataArray);
@@ -98,49 +95,27 @@ contract OevLiquidator is Ownable, IApi3ServerV1OevExtensionOevBidPayer, IFlashL
         LiquidationParams memory params = data.liquidationParams;
         
         // Check if position is liquidatable
-        (
-            uint256 totalCollateralETH,
-            uint256 totalDebtETH,
-            ,
-            ,
-            ,
-            uint256 healthFactor
-        ) = lendingPool.getUserAccountData(params.userToLiquidate);
+        (,,,,,uint256 healthFactor) = lendingPool.getUserAccountData(params.userToLiquidate);
+        require(healthFactor < 1e18, "Position not liquidatable");
 
-        require(
-            healthFactor < 1e18,
-            "Position not liquidatable"
+        // Setup flash loan parameters
+        address[] memory assets = new address[](1);
+        assets[0] = params.debtAsset;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = params.debtToCover;
+        uint256[] memory modes = new uint256[](1);
+        modes[0] = 0; // no debt mode
+
+        // Execute flash loan
+        lendingPool.flashLoan(
+            address(this),
+            assets,
+            amounts,
+            modes,
+            address(this),
+            abi.encode(params), // Pass liquidation params to executeOperation
+            0 // referral code
         );
-
-        // Flashloan logic should go here - borrow the debt asset and repay it in the same transaction
-
-        // Approve spending of debt asset
-        IERC20(params.debtAsset).approve(address(lendingPool), params.debtToCover);
-
-        // Get initial collateral balance to calculate received amount
-        uint256 initialCollateralBalance = IERC20(params.collateralAsset).balanceOf(address(this));
-
-        // Execute liquidation
-        lendingPool.liquidationCall(
-            params.collateralAsset,
-            params.debtAsset,
-            params.userToLiquidate,
-            params.debtToCover,
-            false // receive underlying asset
-        );
-
-        // Calculate received collateral
-        uint256 collateralReceived = IERC20(params.collateralAsset).balanceOf(address(this)) - initialCollateralBalance;
-
-        emit LiquidationExecuted(
-            params.userToLiquidate,
-            params.collateralAsset,
-            params.debtAsset,
-            params.debtToCover,
-            collateralReceived
-        );
-
-        // payback the flashloan
 
         // Pay the bid amount back to the OEV extension
         (bool success, ) = address(api3ServerV1OevExtension).call{value: bidAmount}("");
