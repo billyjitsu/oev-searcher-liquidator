@@ -23,20 +23,21 @@ const deployLiquidator = async () => {
     OevLiquidatorArtifact.bytecode,
     targetNetworkWallet
   );
-  const OevLiquidator = await OevLiquidatorFactory.deploy(
+
+  const OevFlashLiquidator = await OevLiquidatorFactory.deploy(
     1, // dappId
     api3ServerV1OevExtensionAddress,
     lendingPool,
     lendingPoolAddressProvider
   );
 
-  console.log("OevLiquidator deployed at:", OevLiquidator.target);
+  console.log("OevFlashLiquidator deployed at:", OevFlashLiquidator.target);
 
   // Save the address to deployments.json, creating the file if it does not exist
   const deployments = fs.existsSync("scripts/deployments.json")
     ? JSON.parse(fs.readFileSync("scripts/deployments.json"))
     : {};
-  deployments.OevLiquidator = OevLiquidator.target;
+  deployments.OevFlashLiquidator = OevFlashLiquidator.target;
   fs.writeFileSync("scripts/deployments.json", JSON.stringify(deployments, null, 2));
 };
 

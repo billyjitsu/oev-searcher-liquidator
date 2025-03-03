@@ -162,35 +162,6 @@ contract OevLiquidatorSeparate is Ownable, IApi3ServerV1OevExtensionOevBidPayer,
         require(msg.sender == address(lendingPool), "Invalid caller");
         require(initiator == address(this), "Invalid initiator");
 
-        // Decode the liquidation parameters
-        LiquidationParams memory liquidationParams = abi.decode(params, (LiquidationParams));
-
-        // Approve spending of debt asset
-        IERC20(liquidationParams.debtAsset).approve(address(lendingPool), liquidationParams.debtToCover);
-
-        // Get initial collateral balance to calculate received amount
-        uint256 initialCollateralBalance = IERC20(liquidationParams.collateralAsset).balanceOf(address(this));
-
-        // Execute liquidation
-        lendingPool.liquidationCall(
-            liquidationParams.collateralAsset,
-            liquidationParams.debtAsset,
-            liquidationParams.userToLiquidate,
-            liquidationParams.debtToCover,
-            false // receive underlying asset
-        );
-
-        // Calculate received collateral
-        uint256 collateralReceived = IERC20(liquidationParams.collateralAsset).balanceOf(address(this)) - initialCollateralBalance;
-
-        emit LiquidationExecuted(
-            liquidationParams.userToLiquidate,
-            liquidationParams.collateralAsset,
-            liquidationParams.debtAsset,
-            liquidationParams.debtToCover,
-            collateralReceived
-        );
-
         // Approve repayment of flash loan
         for (uint256 i = 0; i < assets.length; i++) {
             uint256 amountToRepay = amounts[i] + premiums[i];
