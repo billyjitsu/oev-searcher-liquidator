@@ -10,7 +10,7 @@ import {ILendingPoolAddressesProvider} from "./vendor/protocol-v2/contracts/inte
 import {IFlashLoanReceiver} from "./vendor/protocol-v2/contracts/flashloan/interfaces/IFlashLoanReceiver.sol";
 
 // Modify contract declaration to implement IFlashLoanReceiver
-contract OevLiquidator is Ownable, IApi3ServerV1OevExtensionOevBidPayer, IFlashLoanReceiver {
+contract OevLiquidatorSeparate is Ownable, IApi3ServerV1OevExtensionOevBidPayer, IFlashLoanReceiver {
     uint256 public immutable dappId;
     IApi3ServerV1OevExtension public immutable api3ServerV1OevExtension;
     ILendingPool public immutable lendingPool;
