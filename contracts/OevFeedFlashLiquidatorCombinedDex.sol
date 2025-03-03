@@ -15,7 +15,7 @@ interface IGenericDex {
 }
 
 // Modify contract declaration to implement IFlashLoanReceiver
-contract OevLiquidator is Ownable, IApi3ServerV1OevExtensionOevBidPayer, IFlashLoanReceiver {
+contract OevFlashLiquidator is Ownable, IApi3ServerV1OevExtensionOevBidPayer, IFlashLoanReceiver {
     uint256 public immutable dappId;
     IApi3ServerV1OevExtension public immutable api3ServerV1OevExtension;
     ILendingPool public immutable lendingPool;
@@ -134,6 +134,7 @@ contract OevLiquidator is Ownable, IApi3ServerV1OevExtensionOevBidPayer, IFlashL
         return OEV_BID_PAYMENT_CALLBACK_SUCCESS;
     }
 
+    // Stand alone function to execute flash loan
     function executeFlashLoan(FlashLoanParams calldata params) external onlyOwner {
         lendingPool.flashLoan(
             address(this),
