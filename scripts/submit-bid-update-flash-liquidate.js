@@ -212,7 +212,7 @@ const {
     liquidationParams
   ) => {
     const liquidator = new Contract(
-      deployments.OevLiquidator, // change this address to the flash loan address
+      deployments.OevFlashLiquidator, 
       LIQUIDATOR_ABI,
       targetNetworkWallet
     );
@@ -330,7 +330,7 @@ const {
     const nextBiddingPhaseEndTimestamp =
       signedDataTimestampCutoff + OEV_AUCTION_LENGTH_SECONDS;
     const bidTopic = getBidTopic(signedDataTimestampCutoff);
-    const bidDetails = getBidDetails(deployments.OevLiquidator); // change this address to the flash loan address
+    const bidDetails = getBidDetails(deployments.OevFlashLiquidator); 
   
     console.log("Placing bid with the following details:");
     console.log("Bid Topic:", bidTopic);

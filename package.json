@@ -13,6 +13,8 @@
     "fund-liquidator": "npx hardhat run scripts/fund-liquidator.js",
     "updateMockPriceandOracle": "npx hardhat run scripts/updateMockPriceandOracle.js",
     "submit-bid-update-liquidate": "npx hardhat run scripts/submit-bid-update-liquidate.js",
+    "deploy-oevfeedflashliquidator": "npx hardhat run scripts/deploy-oevfeedflashliquidator.js",
+    "submit-bid-update-flash-liquidate": "npx hardhat run scripts/submit-bid-update-flash-liquidate.js",
     "deploy-flashtest": "npx hardhat run scripts/deploy-oevfeedliquidatorFlashTest.js",
     "test-flash": "npx hardhat run scripts/testFlashloan.js"
   },
