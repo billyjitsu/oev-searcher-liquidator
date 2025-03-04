@@ -5,6 +5,7 @@ const {
     keccak256,
     solidityPacked,
     parseEther,
+    parseUnits,
     MaxUint256,
     HDNodeWallet,
     formatUnits,
@@ -231,6 +232,15 @@ const {
         ],
       ],
     ];
+
+    // Log out liquidation params
+    console.log("Liquidation Params:");
+    console.log("------------------");
+    console.log("Collateral Asset:", liquidationParams.collateralAsset);
+    console.log("Debt Asset:", liquidationParams.debtAsset);
+    console.log("User to Liquidate:", liquidationParams.userToLiquidate);
+    console.log("Debt to Cover:", liquidationParams.debtToCover);
+    
   
     console.log("Performing Oracle update and liquidation...");
     const updateTx = await liquidator.payBidAndUpdateFeed(params, {
@@ -391,7 +401,8 @@ const {
       collateralAsset: process.env.TOKEN_TO_RECEIVE,
       debtAsset: process.env.TOKEN_TO_REPAY_ADDRESS,
       userToLiquidate: userToLiquidate,
-      debtToCover: MaxUint256,
+      // debtToCover: MaxUint256,
+      debtToCover: parseUnits("10", 6),  // calculate this based on the user's debt
     };
   
     const updateTx = await performOevUpdateAndLiquidation(
