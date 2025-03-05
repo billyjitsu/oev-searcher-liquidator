@@ -78,21 +78,21 @@ const getUserData = async (lendingPool, userAddress) => {
       maxLiquidatableAmount: formatUnits((totalDebtETH * 50n) / 100n, 18),
     };
 
-    console.log("\nPosition Details:");
-    console.log("------------------");
-    console.log(`Total Collateral (ETH): ${formattedData.totalCollateralETH}`);
-    console.log(`Total Debt (ETH): ${formattedData.totalDebtETH}`);
-    console.log(
-      `Available Borrows (ETH): ${formattedData.availableBorrowsETH}`
-    );
-    console.log(
-      `Liquidation Threshold: ${formattedData.currentLiquidationThreshold}%`
-    );
-    console.log(`LTV: ${formattedData.ltv}%`);
-    console.log(`Health Factor: ${formattedData.healthFactor}`);
-    console.log(
-      `Max Liquidatable Amount (ETH): ${formattedData.maxLiquidatableAmount}`
-    );
+    // console.log("\nPosition Details:");
+    // console.log("------------------");
+    // console.log(`Total Collateral (ETH): ${formattedData.totalCollateralETH}`);
+    // console.log(`Total Debt (ETH): ${formattedData.totalDebtETH}`);
+    // console.log(
+    //   `Available Borrows (ETH): ${formattedData.availableBorrowsETH}`
+    // );
+    // console.log(
+    //   `Liquidation Threshold: ${formattedData.currentLiquidationThreshold}%`
+    // );
+    // console.log(`LTV: ${formattedData.ltv}%`);
+    // console.log(`Health Factor: ${formattedData.healthFactor}`);
+    // console.log(
+    //   `Max Liquidatable Amount (ETH): ${formattedData.maxLiquidatableAmount}`
+    // );
 
     return {
       ...formattedData,
@@ -403,70 +403,70 @@ const placeBid = async () => {
     nextBiddingPhaseEndTimestamp
   );
 
-  // const placedbidTx = await OevAuctionHouse.placeBidWithExpiration(
-  //   bidTopic,
-  //   parseInt(targetChainId),
-  //   parseEther(BID_AMOUNT),
-  //   bidDetails,
-  //   MaxUint256,
-  //   MaxUint256,
-  //   nextBiddingPhaseEndTimestamp
-  // );
+  const placedbidTx = await OevAuctionHouse.placeBidWithExpiration(
+    bidTopic,
+    parseInt(targetChainId),
+    parseEther(BID_AMOUNT),
+    bidDetails,
+    MaxUint256,
+    MaxUint256,
+    nextBiddingPhaseEndTimestamp
+  );
 
-  // console.log("Bid placed:", placedbidTx.hash);
+  console.log("Bid placed:", placedbidTx.hash);
 
-  // const bidId = keccak256(
-  //   solidityPacked(
-  //     ["address", "bytes32", "bytes32"],
-  //     [oevNetworkWallet.address, bidTopic, keccak256(bidDetails)]
-  //   )
-  // );
+  const bidId = keccak256(
+    solidityPacked(
+      ["address", "bytes32", "bytes32"],
+      [oevNetworkWallet.address, bidTopic, keccak256(bidDetails)]
+    )
+  );
 
-  // const awardedSignature = await new Promise(async (resolve, reject) => {
-  //   console.log("Waiting for bid to be awarded...");
-  //   const OevAuctionHouseFilter = OevAuctionHouse.filters.AwardedBid(
-  //     null,
-  //     bidTopic,
-  //     bidId,
-  //     null,
-  //     null
-  //   );
-  //   while (true) {
-  //     const bid = await OevAuctionHouse.bids(bidId);
-  //     if (bid[0] === 2n) {
-  //       console.log("Bid Awarded");
-  //       const currentBlock = await oevNetworkProvider.getBlockNumber();
-  //       const awardEvent = await OevAuctionHouse.queryFilter(
-  //         OevAuctionHouseFilter,
-  //         currentBlock - 10,
-  //         currentBlock
-  //       );
-  //       resolve(awardEvent[0].args[3]);
-  //       break;
-  //     }
-  //     await new Promise((r) => setTimeout(r, 100));
-  //   }
-  // });
+  const awardedSignature = await new Promise(async (resolve, reject) => {
+    console.log("Waiting for bid to be awarded...");
+    const OevAuctionHouseFilter = OevAuctionHouse.filters.AwardedBid(
+      null,
+      bidTopic,
+      bidId,
+      null,
+      null
+    );
+    while (true) {
+      const bid = await OevAuctionHouse.bids(bidId);
+      if (bid[0] === 2n) {
+        console.log("Bid Awarded");
+        const currentBlock = await oevNetworkProvider.getBlockNumber();
+        const awardEvent = await OevAuctionHouse.queryFilter(
+          OevAuctionHouseFilter,
+          currentBlock - 10,
+          currentBlock
+        );
+        resolve(awardEvent[0].args[3]);
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  });
 
-  // Calculate the maximum debt to cover in USDC
+  // Calculate the maximum debt to cover 
   const maxDebtToCover = await calculateMaxDebtToCover(lendingPool, userToLiquidate);
-
+  console.log("Max debt to cover:", maxDebtToCover.toString());
+  
   const liquidationParams = {
     collateralAsset: process.env.TOKEN_TO_RECEIVE,
     debtAsset: process.env.TOKEN_TO_REPAY_ADDRESS,
     userToLiquidate: userToLiquidate,
-    // Replace the hardcoded value with our calculated maximum
     debtToCover: maxDebtToCover,
   };
 
-  // const updateTx = await performOevUpdateAndLiquidation(
-  //   awardedSignature,
-  //   signedDataTimestampCutoff,
-  //   priceUpdateDetailsEncoded,
-  //   liquidationParams
-  // );
+  const updateTx = await performOevUpdateAndLiquidation(
+    awardedSignature,
+    signedDataTimestampCutoff,
+    priceUpdateDetailsEncoded,
+    liquidationParams
+  );
 
-  // await reportFulfillment(updateTx, bidTopic, bidDetails, bidId);
+  await reportFulfillment(updateTx, bidTopic, bidDetails, bidId);
 };
 
 placeBid().catch(console.error);
