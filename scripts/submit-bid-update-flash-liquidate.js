@@ -78,22 +78,6 @@ const getUserData = async (lendingPool, userAddress) => {
       maxLiquidatableAmount: formatUnits((totalDebtETH * 50n) / 100n, 18),
     };
 
-    // console.log("\nPosition Details:");
-    // console.log("------------------");
-    // console.log(`Total Collateral (ETH): ${formattedData.totalCollateralETH}`);
-    // console.log(`Total Debt (ETH): ${formattedData.totalDebtETH}`);
-    // console.log(
-    //   `Available Borrows (ETH): ${formattedData.availableBorrowsETH}`
-    // );
-    // console.log(
-    //   `Liquidation Threshold: ${formattedData.currentLiquidationThreshold}%`
-    // );
-    // console.log(`LTV: ${formattedData.ltv}%`);
-    // console.log(`Health Factor: ${formattedData.healthFactor}`);
-    // console.log(
-    //   `Max Liquidatable Amount (ETH): ${formattedData.maxLiquidatableAmount}`
-    // );
-
     return {
       ...formattedData,
       rawHealthFactor: healthFactor,
@@ -109,7 +93,7 @@ const calculateMaxDebtToCover = async (lendingPool, userAddress) => {
   try {
     // Get user data first
     const userData = await getUserData(lendingPool, userAddress);
-    console.log("Raw user data:", userData);
+    // console.log("Raw user data:", userData);
     
     // The key insight: Aave's "ETH value" uses a consistent scaling factor
     // There's a scaling factor of 10^10 between what Aave calls "ETH value" and USD value
@@ -161,50 +145,69 @@ const calculateProjectedHealthFactor = async (
   newPrice
 ) => {
   try {
+    // Get user data
     const userData = await getUserData(lendingPool, userAddress);
+    
+    // The key insight: Aave's "ETH value" uses a consistent scaling factor of 10^10
+    const AAVE_ETH_TO_USD_SCALING = 10000000000; // 10^10
+    
+    // Get the price oracle contract
     const priceOracle = new Contract(
       process.env.AAVE_PRICE_ORACLE_MANAGER,
       PRICE_ORACLE_ABI,
       targetNetworkWallet
     );
 
-    // Get current prices from oracle
-    const collateralPriceWei = await priceOracle.getAssetPrice(
-      process.env.TOKEN_TO_RECEIVE
-    );
-    const debtPriceWei = await priceOracle.getAssetPrice(
-      process.env.TOKEN_TO_REPAY_ADDRESS
-    );
+    // Get actual token addresses for collateral and debt
+    const collateralAsset = process.env.TOKEN_TO_RECEIVE;
+    const debtAsset = process.env.TOKEN_TO_REPAY_ADDRESS;
 
-    const collateralPrice = formatUnits(collateralPriceWei, 8);
+    // Get current prices from oracle (these are in "ETH" terms according to Aave)
+    const collateralPriceWei = await priceOracle.getAssetPrice(collateralAsset);
+    const debtPriceWei = await priceOracle.getAssetPrice(debtAsset);
+
+    // Format prices to decimals
+    const collateralPrice = formatUnits(collateralPriceWei, 8); // Assuming 8 decimals
     const debtPrice = formatUnits(debtPriceWei, 8);
-
-    // Convert ETH values to actual token amounts and USD values
-    const collateralTokens =
-      parseFloat(userData.totalCollateralETH) * parseFloat(collateralPrice);
-    const debtTokens =
-      parseFloat(userData.totalDebtETH) * parseFloat(debtPrice);
-
+    
+    // Convert Aave's "ETH values" to USD using our scaling factor
+    const totalCollateralUSD = parseFloat(userData.totalCollateralETH) * AAVE_ETH_TO_USD_SCALING;
+    const totalDebtUSD = parseFloat(userData.totalDebtETH) * AAVE_ETH_TO_USD_SCALING;
+    
+    // Calculate actual token amounts
+    // If price is $1, then $346.18 = 346.18 tokens
+    // If price is $0.50, then $347.93 = 695.86 tokens
+    const collateralTokens = totalCollateralUSD / parseFloat(collateralPrice);
+    const debtTokens = totalDebtUSD / parseFloat(debtPrice);
+    
+    // Calculate new collateral value using the new price
     const newCollateralValueUSD = collateralTokens * newPrice;
-    const projectedHealthFactor =
-      (newCollateralValueUSD * userData.currentLiquidationThreshold) /
-      debtTokens;
-
+    
+    // Calculate projected health factor
+    // Health factor = (collateral value * liquidation threshold) / debt value
+    const liquidationThreshold = userData.currentLiquidationThreshold / 100; // Convert to decimal
+    const projectedHealthFactor = (newCollateralValueUSD * liquidationThreshold) / totalDebtUSD;
+    
     console.log({
+      totalCollateralUSD: totalCollateralUSD.toFixed(2),
+      totalDebtUSD: totalDebtUSD.toFixed(2),
       currentCollateralPrice: collateralPrice,
       currentDebtPrice: debtPrice,
-      collateralTokens,
-      debtTokens,
-      newCollateralValueUSD,
-      projectedHealthFactor: projectedHealthFactor.toFixed(6),
+      collateralTokens: collateralTokens.toFixed(2),
+      debtTokens: debtTokens.toFixed(2), 
+      newPrice,
+      newCollateralValueUSD: newCollateralValueUSD.toFixed(2),
+      liquidationThreshold: liquidationThreshold.toFixed(2),
+      projectedHealthFactor: projectedHealthFactor.toFixed(6)
     });
-
+    
     return projectedHealthFactor;
   } catch (error) {
-    console.error("Error:", error);
+    console.error("Error calculating projected health factor:", error);
     throw error;
   }
 };
+
 const determineSignedDataTimestampCutoff = () => {
   const auctionOffset = Number(
     BigInt(keccak256(solidityPacked(["uint256"], [DAPP_ID]))) %
@@ -366,6 +369,8 @@ const placeBid = async () => {
     userToLiquidate,
     medianPrice
   );
+
+  console.log("Median Price:", medianPrice);
 
   // if (projectedHealthFactor >= 1.0) {
   //     console.log("Position would not be liquidatable with new price. Aborting...");
