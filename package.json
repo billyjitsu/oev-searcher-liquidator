@@ -6,13 +6,17 @@
   "license": "MIT",
   "scripts": {
     "build": "hardhat compile",
-    "deposit-collateral": "hardhat run scripts/deposit-collateral.js",
-    "deploy-oevfeedupdater": "hardhat run scripts/deploy-oevfeedupdater.js",
-    "submit-bid-update": "hardhat run scripts/submit-bid-update.js",
-    "deploy-oevfeedliquidator": "hardhat run scripts/deploy-oevfeedliquidator.js",
-    "fund-liquidator": "hardhat run scripts/fund-liquidator.js",
-    "updateMockPriceandOracle": "hardhat run scripts/updateMockPriceandOracle.js",
-    "submit-bid-update-liquidate": "hardhat run scripts/submit-bid-update-liquidate.js"
+    "deposit-collateral": "npx hardhat run scripts/deposit-collateral.js",
+    "deploy-oevfeedupdater": "npx hardhat run scripts/deploy-oevfeedupdater.js",
+    "submit-bid-update": "npx hardhat run scripts/submit-bid-update.js",
+    "deploy-oevfeedliquidator": "npx hardhat run scripts/deploy-oevfeedliquidator.js",
+    "fund-liquidator": "npx hardhat run scripts/fund-liquidator.js",
+    "updateMockPriceandOracle": "npx hardhat run scripts/updateMockPriceandOracle.js",
+    "submit-bid-update-liquidate": "npx hardhat run scripts/submit-bid-update-liquidate.js",
+    "deploy-oevfeedflashliquidator": "npx hardhat run scripts/deploy-oevfeedflashliquidator.js",
+    "submit-bid-update-flash-liquidate": "npx hardhat run scripts/submit-bid-update-flash-liquidate.js",
+    "deploy-flashtest": "npx hardhat run scripts/deploy-oevfeedliquidatorFlashTest.js",
+    "test-flash": "npx hardhat run scripts/testFlashloan.js"
   },
   "devDependencies": {
     "@api3/contracts": "^16.3.0",
