@@ -2,7 +2,7 @@ const { ethers } = require('ethers');
 require('dotenv').config();
 
 // Configuration
-const newPriceValue = 700903720000000000n;
+const newPriceValue = 730903720000000000n;
 const provider = new ethers.JsonRpcProvider(process.env.TARGET_NETWORK_RPC_URL);
 const wallet = ethers.Wallet.fromPhrase(process.env.MNEMONIC);
 const signer = wallet.connect(provider);
@@ -92,13 +92,13 @@ async function updateOracleProxy(newAssetProxy) {
 async function executeFullUpdate(priceValue = newPriceValue) {
   try {
     // Step 1: Update the mock price
-    await updateMockPrice(priceValue);
+      // await updateMockPrice(priceValue);
     
     // // Step 2: Set the asset proxy to the original oracle
     // await setMockAssetProxy(originalOracleAddress);
     
     // // Step 3: Update the oracle proxy to use the mock
-    // await updateOracleProxy(mockProxyAddress);
+    await updateOracleProxy(mockProxyAddress);
     
     console.log('Full update sequence completed successfully');
   } catch (error) {

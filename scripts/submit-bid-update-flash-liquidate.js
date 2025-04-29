@@ -175,8 +175,6 @@ const calculateProjectedHealthFactor = async (
     const totalDebtUSD = parseFloat(userData.totalDebtETH) * AAVE_ETH_TO_USD_SCALING;
     
     // Calculate actual token amounts
-    // If price is $1, then $346.18 = 346.18 tokens
-    // If price is $0.50, then $347.93 = 695.86 tokens
     const collateralTokens = totalCollateralUSD / parseFloat(collateralPrice);
     const debtTokens = totalDebtUSD / parseFloat(debtPrice);
     
@@ -439,15 +437,17 @@ const placeBid = async () => {
     while (true) {
       const bid = await OevAuctionHouse.bids(bidId);
       if (bid[0] === 2n) {
-        console.log("Bid Awarded");
         const currentBlock = await oevNetworkProvider.getBlockNumber();
         const awardEvent = await OevAuctionHouse.queryFilter(
           OevAuctionHouseFilter,
           currentBlock - 10,
           currentBlock
         );
-        resolve(awardEvent[0].args[3]);
-        break;
+        if (awardEvent && awardEvent.length > 0 && awardEvent[0].args) {
+            console.log("Bid Awarded");
+          resolve(awardEvent[0].args[3]);
+          break;
+        }
       }
       await new Promise((r) => setTimeout(r, 100));
     }

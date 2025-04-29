@@ -15,8 +15,7 @@
     "submit-bid-update-liquidate": "npx hardhat run scripts/submit-bid-update-liquidate.js",
     "deploy-oevfeedflashliquidator": "npx hardhat run scripts/deploy-oevfeedflashliquidator.js",
     "submit-bid-update-flash-liquidate": "npx hardhat run scripts/submit-bid-update-flash-liquidate.js",
-    "deploy-flashtest": "npx hardhat run scripts/deploy-oevfeedliquidatorFlashTest.js",
-    "test-flash": "npx hardhat run scripts/testFlashloan.js"
+    "readOEVMock": "npx hardhat run scripts/readOEVMock.js"
   },
   "devDependencies": {
     "@api3/contracts": "^16.3.0",
